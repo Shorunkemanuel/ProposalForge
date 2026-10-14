@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ProposalForge</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <h1>ProposalForge</h1>
+    <p class="tagline">Client brief &rarr; validated inputs &rarr; deterministic pricing &rarr; AI draft (for human review).</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Client brief</h2>
+      <form id="proposal-form" novalidate>
+        <label for="client_name">Client or project name</label>
+        <input id="client_name" name="client_name" type="text" maxlength="200" required autocomplete="organization">
+
+        <label for="brief">Client brief</label>
+        <textarea id="brief" name="brief" rows="5" minlength="10" maxlength="5000" required></textarea>
+
+        <label for="scope">Scope of work</label>
+        <textarea id="scope" name="scope" rows="5" minlength="10" maxlength="5000" required></textarea>
+
+        <label for="timeline">Timeline or schedule</label>
+        <textarea id="timeline" name="timeline" rows="3" maxlength="1000" required></textarea>
+
+        <div class="grid">
+          <div class="field">
+            <label for="hourly_rate">Hourly rate</label>
+            <input id="hourly_rate" name="hourly_rate" type="text" inputmode="decimal" placeholder="e.g. 85.00" required aria-describedby="hr-help">
+            <small id="hr-help" class="hint">Enter numbers (e.g. 85.00)</small>
+          </div>
+          <div class="field">
+            <label for="estimated_hours">Estimated hours</label>
+            <input id="estimated_hours" name="estimated_hours" type="text" inputmode="decimal" placeholder="e.g. 40" required aria-describedby="eh-help">
+            <small id="eh-help" class="hint">Enter numbers (e.g. 40)</small>
+          </div>
+          <div class="field">
+            <label for="expenses">Additional expenses</label>
+            <input id="expenses" name="expenses" type="text" inputmode="decimal" placeholder="e.g. 250.00 (optional)" aria-describedby="exp-help">
+            <small id="exp-help" class="hint">Optional; leave blank if none.</small>
+          </div>
+          <div class="field">
+            <label for="currency">Currency (3-letter code, no conversion)</label>
+            <input id="currency" name="currency" type="text" maxlength="3" value="USD" autocomplete="off">
+          </div>
+        </div>
+
+        <p class="hint">All values are entered in a single currency. ProposalForge does not convert currencies.</p>
+        <button type="submit" id="submit-btn">Generate draft</button>
+      </form>
+
+      <div id="status" class="sr-only" role="status" aria-live="polite"></div>
+      <div id="error-box" class="error" role="alert" hidden></div>
+    </section>
+
+    <section class="card" id="pricing-card" hidden tabindex="-1" aria-label="Calculated pricing">
+      <h2>Calculated pricing (authoritative)</h2>
+      <p class="hint">These figures are computed by ProposalForge, not by the AI.</p>
+      <table id="pricing-table" aria-label="Pricing breakdown"></table>
+    </section>
+
+    <section class="card" id="draft-card" hidden tabindex="-1" aria-label="Proposal draft">
+      <h2>Proposal draft</h2>
+      <div class="notice" id="draft-notice"></div>
+      <p class="hint">Every field below is editable. Edit freely during review.</p>
+      <div id="draft-fields"></div>
+      <div id="missing-box" hidden>
+        <h3>Missing information to resolve</h3>
+        <ul id="missing-list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Local tool. Does not send proposals, store client data, or create accounts.</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
