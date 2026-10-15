@@ -188,6 +188,56 @@ textarea[aria-invalid="true"] {
 #draft-fields label { margin-top: 1rem; }
 #draft-fields textarea { min-height: 90px; }
 
+.review-controls {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.review-controls h3 { margin: 0 0 0.25rem 0; font-size: 1rem; }
+
+.review-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.review-check input[type="checkbox"] {
+  appearance: auto;
+  -webkit-appearance: checkbox;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  margin: 0.15rem 0 0 0;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  accent-color: var(--accent);
+}
+
+.review-check label {
+  margin: 0;
+  font-weight: 400;
+  font-size: 0.95rem;
+}
+
+.review-actions { margin-top: 0.85rem; }
+
+.copy-fallback { margin-top: 0.85rem; }
+
+.copy-fallback-text {
+  min-height: 9rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+@media (max-width: 360px) {
+  .review-check { gap: 0.4rem; }
+}
+
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 td:last-child { text-align: right; font-variant-numeric: tabular-nums; }

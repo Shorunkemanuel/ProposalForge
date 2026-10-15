@@ -83,6 +83,23 @@
         <h3>Missing information to resolve</h3>
         <ul id="missing-list"></ul>
       </div>
+
+      <div class="review-controls" role="group" aria-labelledby="review-heading">
+        <h3 id="review-heading">Review before copying</h3>
+        <p class="hint">Copying stays disabled until you confirm you have reviewed the draft.</p>
+        <div class="review-check">
+          <input type="checkbox" id="review-ack" aria-describedby="review-help">
+          <label for="review-ack">I have reviewed this generated proposal and its pricing, and I understand it is an unapproved AI draft. ProposalForge does not verify its accuracy.</label>
+        </div>
+        <p id="review-help" class="hint">Confirming review enables the copy button. Confirmation is not saved anywhere.</p>
+        <div class="review-actions">
+          <button type="button" id="copy-btn" disabled>Copy proposal</button>
+        </div>
+        <div id="copy-fallback" class="copy-fallback" hidden>
+          <label for="copy-fallback-text">Manual copy: select the text below and copy it (Ctrl/Cmd+C).</label>
+          <textarea id="copy-fallback-text" class="copy-fallback-text" readonly rows="10"></textarea>
+        </div>
+      </div>
     </section>
   </main>
 

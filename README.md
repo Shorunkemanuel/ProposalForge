@@ -11,6 +11,18 @@ Before generating, the form shows a live checklist that groups the required inpu
 - The browser calls `POST /api/readiness` (debounced) and renders the report; the server route reuses the same Host/origin/content-type/body-size guards as `POST /api/proposals`.
 - Accessibility: each item has a visible text state (not colour-only) plus a decorative mark, a heading-labelled list, a visible summary, and a polite `aria-live` status that announces progress without per-keystroke noise. Layout is responsive down to small screens and honours `prefers-reduced-motion`.
 
+## Milestone 3-B — review acknowledgement and copy
+
+After generating, the draft stays explicitly unapproved until the user confirms they have reviewed it. A native checkbox records that acknowledgement as **transient browser state only** — it is never written to local storage, cookies, a database, or a server session. The copy action stays disabled until the box is checked, and removing the acknowledgement disables copying again. The label states plainly that ProposalForge does not verify the draft's accuracy; acknowledgement is the user's review, not an application check.
+
+Once acknowledged, **Copy proposal** copies the assembled draft text together with the authoritative pricing figures. The text is built in the browser from the validated draft fields and the pricing the server already returned; JavaScript never calculates, infers, or changes a price. The copied text contains only the draft fields, the missing-information list, and the pricing breakdown — no page chrome, provider configuration, or internal metadata.
+
+Copying prefers `navigator.clipboard.writeText`. The clipboard API is feature-detected, and rejected promises (for example a permission denial) are handled. If the API is unavailable or the write fails, the interface explains the failure and reveals a read-only **manual copy box** so the proposal text can still be selected and copied by hand. Success is announced only after the write resolves; failure never leaves the interface claiming the copy worked. No deprecated `document.execCommand` technique is used.
+
+- Local and deterministic: no new endpoint, no provider call, and no proposal data leaves the page.
+- The acknowledgement and status changes are announced through the existing polite live region (`#status`); focus is not moved when status text changes.
+- Accessibility: native labelled controls, keyboard-operable; state conveyed in text rather than colour alone; checkbox and button meet the 24 × 24 CSS-pixel target size, keep visible focus indicators, and honour `prefers-reduced-motion`.
+
 ## Milestone 2 — implementation
 
 ### What it does

@@ -35,6 +35,12 @@ const readinessList = document.getElementById("readiness-list");
 const readinessWarnings = document.getElementById("readiness-warnings");
 const readinessSummary = document.getElementById("readiness-summary");
 const readinessStatus = document.getElementById("readiness-status");
+const reviewAck = document.getElementById("review-ack");
+const copyBtn = document.getElementById("copy-btn");
+const copyFallback = document.getElementById("copy-fallback");
+const copyFallbackText = document.getElementById("copy-fallback-text");
+
+let lastPricing = null;
 
 function showError(message) {
   errorBox.textContent = message;
@@ -59,6 +65,82 @@ function scrollIntoView(el) {
   } else {
     el.scrollIntoView({ behavior: "smooth" });
   }
+}
+
+function hideCopyFallback() {
+  copyFallback.hidden = true;
+  copyFallbackText.value = "";
+}
+
+function resetReviewControls() {
+  reviewAck.checked = false;
+  copyBtn.disabled = true;
+  hideCopyFallback();
+}
+
+function assembleProposalText() {
+  const lines = ["Proposal draft"];
+  if (draftNotice.textContent) {
+    lines.push(draftNotice.textContent);
+  }
+  lines.push("");
+  for (const [key, label] of DRAFT_FIELDS) {
+    const field = document.getElementById(`draft-${key}`);
+    lines.push(`${label}:`);
+    lines.push(field ? field.value : "");
+    lines.push("");
+  }
+
+  const missingItems = Array.from(missingList.querySelectorAll("li"));
+  if (missingItems.length) {
+    lines.push("Missing information to resolve:");
+    for (const item of missingItems) {
+      lines.push(`- ${item.textContent}`);
+    }
+    lines.push("");
+  }
+
+  lines.push("Calculated pricing (authoritative):");
+  if (lastPricing) {
+    for (const [key, label] of PRICING_LABELS) {
+      const value = MONEY_KEYS.has(key)
+        ? `${lastPricing[key]} ${lastPricing.currency}`
+        : lastPricing[key];
+      lines.push(`${label}: ${value}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function showCopyFallback(text, message) {
+  copyFallbackText.value = text;
+  copyFallback.hidden = false;
+  announce(message);
+}
+
+async function copyProposal() {
+  if (copyBtn.disabled) return;
+  const text = assembleProposalText();
+  hideCopyFallback();
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      announce("Proposal copied to the clipboard.");
+      return;
+    } catch (err) {
+      showCopyFallback(
+        text,
+        "Copying to the clipboard was blocked or unavailable. Use the manual copy box below to select and copy the proposal."
+      );
+      return;
+    }
+  }
+
+  showCopyFallback(
+    text,
+    "Clipboard access is not available in this browser. Use the manual copy box below to select and copy the proposal."
+  );
 }
 
 function setDescribedBy(el, addId, removeId) {
@@ -104,6 +186,7 @@ function showFieldErrors(fields) {
 }
 
 function renderPricing(pricing) {
+  lastPricing = pricing;
   pricingTable.innerHTML = "";
   for (const [key, label] of PRICING_LABELS) {
     const row = document.createElement("tr");
@@ -121,6 +204,7 @@ function renderPricing(pricing) {
 }
 
 function renderDraft(result) {
+  resetReviewControls();
   draftNotice.textContent = result.notice;
   draftFields.innerHTML = "";
   for (const [key, label] of DRAFT_FIELDS) {
@@ -308,5 +392,17 @@ form.addEventListener("submit", async (event) => {
     submitBtn.textContent = "Generate draft";
   }
 });
+
+reviewAck.addEventListener("change", () => {
+  copyBtn.disabled = !reviewAck.checked;
+  if (reviewAck.checked) {
+    announce("Review confirmed. You can now copy the proposal.");
+  } else {
+    hideCopyFallback();
+    announce("Review confirmation removed. Copying is disabled until you confirm again.");
+  }
+});
+
+copyBtn.addEventListener("click", copyProposal);
 
 scheduleReadiness();
