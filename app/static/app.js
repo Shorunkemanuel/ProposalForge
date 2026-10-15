@@ -31,6 +31,10 @@ const draftNotice = document.getElementById("draft-notice");
 const draftFields = document.getElementById("draft-fields");
 const missingBox = document.getElementById("missing-box");
 const missingList = document.getElementById("missing-list");
+const readinessList = document.getElementById("readiness-list");
+const readinessWarnings = document.getElementById("readiness-warnings");
+const readinessSummary = document.getElementById("readiness-summary");
+const readinessStatus = document.getElementById("readiness-status");
 
 function showError(message) {
   errorBox.textContent = message;
@@ -148,15 +152,123 @@ function renderDraft(result) {
   scrollIntoView(draftCard);
 }
 
+function collectFormData() {
+  const data = {};
+  for (const element of form.elements) {
+    if (element.name) data[element.name] = element.value;
+  }
+  return data;
+}
+
+let announcedSignature = null;
+
+function renderReadiness(report) {
+  const warnings = report.warnings || [];
+  readinessList.innerHTML = "";
+  for (const section of report.sections) {
+    const li = document.createElement("li");
+    li.className = "check-item " + (section.complete ? "is-complete" : "is-incomplete");
+
+    const mark = document.createElement("span");
+    mark.className = "check-mark";
+    mark.setAttribute("aria-hidden", "true");
+    mark.textContent = section.complete ? "✓" : "✗";
+
+    const body = document.createElement("span");
+    body.className = "check-body";
+
+    const label = document.createElement("span");
+    label.className = "check-label";
+    label.textContent = section.label;
+
+    const state = document.createElement("span");
+    state.className = "check-state";
+    state.textContent = section.complete ? "Complete" : "Incomplete";
+
+    body.append(label, state);
+
+    if (!section.complete) {
+      const details = section.items
+        .filter((item) => !item.complete)
+        .map((item) => `${item.label}: ${item.message}`);
+      const detail = document.createElement("span");
+      detail.className = "check-detail";
+      detail.textContent = details.join(" ");
+      body.appendChild(detail);
+    }
+
+    li.append(mark, body);
+    readinessList.appendChild(li);
+  }
+
+  readinessWarnings.innerHTML = "";
+  for (const warning of warnings) {
+    const box = document.createElement("p");
+    box.className = "readiness-warning";
+    const mark = document.createElement("span");
+    mark.className = "warn-mark";
+    mark.setAttribute("aria-hidden", "true");
+    mark.textContent = "!";
+    const text = document.createElement("span");
+    text.textContent = `${warning.label}: ${warning.message}`;
+    box.append(mark, text);
+    readinessWarnings.appendChild(box);
+  }
+  readinessWarnings.hidden = warnings.length === 0;
+
+  let summary;
+  if (report.ready) {
+    summary = "All required sections complete. You can generate the draft.";
+  } else if (warnings.length) {
+    summary =
+      `${report.complete_sections} of ${report.total_sections} sections complete. ` +
+      "Fix the highlighted issue before generating.";
+  } else {
+    summary =
+      `${report.complete_sections} of ${report.total_sections} sections complete. ` +
+      "Complete the remaining required inputs before generating.";
+  }
+  readinessSummary.textContent = summary;
+
+  const signature =
+    `${report.complete_sections}|` + warnings.map((warning) => warning.message).join(",");
+  if (signature !== announcedSignature) {
+    announcedSignature = signature;
+    const warningText = warnings
+      .map((warning) => `${warning.label}: ${warning.message}`)
+      .join(" ");
+    readinessStatus.textContent = warningText ? `${summary} ${warningText}` : summary;
+  }
+}
+
+let readinessTimer = null;
+
+async function refreshReadiness() {
+  try {
+    const response = await fetch("/api/readiness", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectFormData()),
+    });
+    if (!response.ok) return;
+    renderReadiness(await response.json());
+  } catch (err) {
+    readinessSummary.textContent = "Readiness check unavailable until the server is reachable.";
+  }
+}
+
+function scheduleReadiness() {
+  window.clearTimeout(readinessTimer);
+  readinessTimer = window.setTimeout(refreshReadiness, 250);
+}
+
+form.addEventListener("input", scheduleReadiness);
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearError();
   clearFieldErrors();
 
-  const data = {};
-  for (const element of form.elements) {
-    if (element.name) data[element.name] = element.value;
-  }
+  const data = collectFormData();
 
   submitBtn.disabled = true;
   submitBtn.textContent = "Generating…";
@@ -196,3 +308,5 @@ form.addEventListener("submit", async (event) => {
     submitBtn.textContent = "Generate draft";
   }
 });
+
+scheduleReadiness();

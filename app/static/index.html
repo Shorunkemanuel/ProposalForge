@@ -51,10 +51,20 @@
         </div>
 
         <p class="hint">All values are entered in a single currency. ProposalForge does not convert currencies.</p>
-        <button type="submit" id="submit-btn">Generate draft</button>
+
+        <div class="readiness" id="readiness">
+          <h3 id="readiness-heading">Proposal readiness</h3>
+          <p class="hint">Expenses are optional. Complete the required inputs before generating.</p>
+          <ul id="readiness-list" class="checklist" aria-labelledby="readiness-heading"></ul>
+          <div id="readiness-warnings" class="readiness-warnings" hidden></div>
+          <p id="readiness-summary" class="readiness-summary">Checking readiness&hellip;</p>
+        </div>
+
+        <button type="submit" id="submit-btn" aria-describedby="readiness-summary">Generate draft</button>
       </form>
 
       <div id="status" class="sr-only" role="status" aria-live="polite"></div>
+      <div id="readiness-status" class="sr-only" role="status" aria-live="polite"></div>
       <div id="error-box" class="error" role="alert" hidden></div>
     </section>
 

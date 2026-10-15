@@ -1,12 +1,21 @@
 # ProposalForge
 
-Milestone 2 is the first application implementation: a small vertical slice that turns a client brief into an editable, AI-drafted proposal with deterministic, application-calculated pricing. Milestone 1 (investigation and baseline) is retained below.
+Milestone 3-A adds a deterministic, accessible proposal-readiness checklist on top of the Milestone 2 vertical slice. Milestone 2 (implementation) and Milestone 1 (investigation) are retained below.
+
+## Milestone 3-A — readiness checklist
+
+Before generating, the form shows a live checklist that groups the required inputs into **Brief**, **Scope & deliverables**, **Timeline**, and **Pricing**. It updates as the user edits fields and names the specific inputs that are still missing (for example, "Client brief: at least 10 characters"). Expenses are optional; omitting them or supplying a valid amount never blocks readiness, but a supplied invalid expense (such as a negative amount) is shown as a warning and keeps the checklist not ready.
+
+- The checklist is plain application logic in `app/readiness.py`; no AI model is involved.
+- It reuses the same field definitions, length thresholds, and non-negative-number parser as server-side validation (`app/validation.py`), so the checklist cannot drift from the validation that guards generation.
+- The browser calls `POST /api/readiness` (debounced) and renders the report; the server route reuses the same Host/origin/content-type/body-size guards as `POST /api/proposals`.
+- Accessibility: each item has a visible text state (not colour-only) plus a decorative mark, a heading-labelled list, a visible summary, and a polite `aria-live` status that announces progress without per-keystroke noise. Layout is responsive down to small screens and honours `prefers-reduced-motion`.
 
 ## Milestone 2 — implementation
 
 ### What it does
 
-`client brief -> input validation -> deterministic pricing -> AI-generated draft -> editable draft for human review`
+`client brief -> readiness checklist -> input validation -> deterministic pricing -> AI-generated draft -> editable draft for human review`
 
 The AI provider only drafts wording from the facts the user supplies. All pricing is calculated by application code and can never be changed by model output. The draft is clearly marked AI-generated and unapproved; nothing is sent to clients and no client data is stored.
 
@@ -27,9 +36,10 @@ app/
   proposal.py      pipeline, prompt building, model-output validation
   providers.py     Ollama-compatible adapter + config + error types
   validation.py    input validation (fields, lengths, numerics, currency)
+  readiness.py     deterministic readiness checklist (no AI)
   pricing.py       deterministic decimal-safe pricing
   static/          index.html, styles.css, app.js
-tests/             92 automated tests (no live credentials required)
+tests/             123 automated tests (no live credentials required)
 scripts/live_smoke.py   opt-in live inference check
 ```
 
@@ -51,6 +61,7 @@ The variables are read from the process environment; `.env` is **not** auto-load
 
 - `GET /` — serve the application; `GET /static/<path>` — assets.
 - `POST /api/proposals` — JSON body with `client_name`, `brief`, `scope`, `timeline`, `hourly_rate`, `estimated_hours`, `expenses`, `currency`. Returns `{ notice, pricing, draft }`.
+- `POST /api/readiness` — JSON body with any subset of the proposal fields. Returns a deterministic readiness report (`ready`, `complete_sections`, `total_sections`, per-section items, and `warnings` for supplied-but-invalid optional inputs). No provider is contacted; an omitted expense is ignored, while a supplied negative expense is a warning.
 - Errors: `400` invalid/malformed input, `403` cross-origin or disallowed `Host`, `413` oversized body, `415` non-JSON content type, `502` provider failure or invalid model output, `504` provider timeout, `500` unexpected (generic message only). Errors never include stack traces, secrets, or raw provider payloads.
 - Responses send `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and a restrictive `Content-Security-Policy`; JSON API responses are `Cache-Control: no-store`.
 

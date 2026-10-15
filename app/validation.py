@@ -33,29 +33,36 @@ class ValidationError(Exception):
         super().__init__("Invalid proposal input")
 
 
-def _parse_decimal(value, field: str, errors: dict):
+def parse_non_negative_decimal(value):
+    """Return ``(Decimal, None)`` or ``(None, message)``.
+
+    Shared by validation and the readiness checklist so both agree on what a
+    usable number is. The returned message is user-facing.
+    """
     if value is None or (isinstance(value, str) and not value.strip()):
-        errors[field] = "This field is required."
-        return None
+        return None, "This field is required."
     if isinstance(value, bool):
-        errors[field] = "Must be a number."
-        return None
+        return None, "Must be a number."
     try:
         if isinstance(value, str):
             parsed = Decimal(value.strip())
         elif isinstance(value, (int, float, Decimal)):
             parsed = Decimal(str(value))
         else:
-            errors[field] = "Must be a number."
-            return None
+            return None, "Must be a number."
     except (InvalidOperation, ValueError):
-        errors[field] = "Must be a valid number."
-        return None
+        return None, "Must be a valid number."
     if not parsed.is_finite():
-        errors[field] = "Must be a finite number."
-        return None
+        return None, "Must be a finite number."
     if parsed < 0:
-        errors[field] = "Must not be negative."
+        return None, "Must not be negative."
+    return parsed, None
+
+
+def _parse_decimal(value, field: str, errors: dict):
+    parsed, message = parse_non_negative_decimal(value)
+    if message is not None:
+        errors[field] = message
         return None
     return parsed
 

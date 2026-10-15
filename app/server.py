@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlparse
 
 from .proposal import InvalidModelOutput, build_proposal
 from .providers import ProviderError, ProviderTimeout, ProviderUnavailable, get_provider
+from .readiness import evaluate_readiness
 from .validation import ValidationError
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -90,6 +91,15 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Content-Security-Policy": CONTENT_SECURITY_POLICY,
 }
+
+
+def process_readiness_request(payload):
+    """Pure readiness handler: return (status_code, response_dict).
+
+    Readiness is deterministic application logic with no provider involved,
+    so this always returns 200 with a checklist report.
+    """
+    return 200, evaluate_readiness(payload)
 
 
 def process_request(payload, provider):
@@ -223,7 +233,7 @@ class ProposalForgeHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path != "/api/proposals":
+        if path not in ("/api/proposals", "/api/readiness"):
             self._send_json(404, {"error": "not_found"})
             return
 
@@ -262,7 +272,10 @@ class ProposalForgeHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "invalid_json"})
             return
 
-        status, response = process_request(payload, self.provider)
+        if path == "/api/readiness":
+            status, response = process_readiness_request(payload)
+        else:
+            status, response = process_request(payload, self.provider)
         self._send_json(status, response)
 
 

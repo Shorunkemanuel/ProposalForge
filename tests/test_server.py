@@ -7,7 +7,12 @@ import urllib.request
 
 from app.proposal import InvalidModelOutput
 from app.providers import ProviderTimeout, ProviderUnavailable
-from app.server import create_server, process_request, resolve_allowed_hosts
+from app.server import (
+    create_server,
+    process_readiness_request,
+    process_request,
+    resolve_allowed_hosts,
+)
 
 
 def valid_payload(**overrides):
@@ -113,6 +118,34 @@ class ProcessRequestTests(unittest.TestCase):
         self.assertEqual(body["error"], "invalid_model_output")
 
 
+class ProcessReadinessRequestTests(unittest.TestCase):
+    def test_valid_payload_is_ready(self):
+        status, body = process_readiness_request(valid_payload())
+        self.assertEqual(status, 200)
+        self.assertTrue(body["ready"])
+        self.assertEqual(body["total_sections"], 4)
+
+    def test_incomplete_payload_reports_missing_sections(self):
+        status, body = process_readiness_request({"client_name": "Acme"})
+        self.assertEqual(status, 200)
+        self.assertFalse(body["ready"])
+        self.assertEqual(body["complete_sections"], 0)
+
+    def test_non_dict_payload_is_handled(self):
+        status, body = process_readiness_request("not a dict")
+        self.assertEqual(status, 200)
+        self.assertFalse(body["ready"])
+
+    def test_missing_pricing_numbers_are_reported(self):
+        payload = valid_payload()
+        del payload["hourly_rate"]
+        status, body = process_readiness_request(payload)
+        self.assertEqual(status, 200)
+        self.assertFalse(body["ready"])
+        pricing = next(s for s in body["sections"] if s["id"] == "pricing")
+        self.assertFalse(pricing["complete"])
+
+
 class HttpServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -159,6 +192,55 @@ class HttpServerTests(unittest.TestCase):
             body = json.loads(response.read())
             self.assertEqual(body["pricing"]["total"], "3650.00")
 
+    def test_post_negative_expenses_rejected(self):
+        body = expect_http_error(
+            self,
+            400,
+            lambda: self._post(
+                json.dumps(valid_payload(expenses="-5")).encode("utf-8"),
+                {"Content-Type": "application/json"},
+            ),
+        )
+        payload = json.loads(body)
+        self.assertEqual(payload["error"], "validation_error")
+        self.assertIn("expenses", payload["fields"])
+
+    def test_post_readiness_ready(self):
+        request = urllib.request.Request(
+            self.url("/api/readiness"),
+            data=json.dumps(valid_payload()).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            body = json.loads(response.read())
+            self.assertTrue(body["ready"])
+            self.assertEqual(len(body["sections"]), 4)
+
+    def test_post_readiness_incomplete(self):
+        request = urllib.request.Request(
+            self.url("/api/readiness"),
+            data=json.dumps({}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            self.assertFalse(json.loads(response.read())["ready"])
+
+    def test_post_readiness_foreign_host_rejected(self):
+        data = self._raw_post(f"evil.example:{self.port}", path="/api/readiness")
+        self.assertIn(b" 403 ", self._status_line(data))
+
+    def test_post_readiness_without_json_content_type_returns_415(self):
+        body = expect_http_error(
+            self,
+            415,
+            lambda: self._post(b"{}", {"Content-Type": "text/plain"}, path="/api/readiness"),
+        )
+        self.assertEqual(json.loads(body)["error"], "unsupported_media_type")
+
     def test_post_invalid_json_returns_400(self):
         request = urllib.request.Request(
             self.url("/api/proposals"),
@@ -191,14 +273,14 @@ class HttpServerTests(unittest.TestCase):
     def _body(self):
         return json.dumps(valid_payload()).encode("utf-8")
 
-    def _raw_post(self, host_header, body=None, include_host=True):
+    def _raw_post(self, host_header, body=None, include_host=True, path="/api/proposals"):
         """POST with an explicit Host header (urllib cannot spoof Host).
 
         Returns the raw response bytes. The socket is closed by the ``with``
         block so no ``ResourceWarning`` is emitted under ``-W error``.
         """
         body = self._body() if body is None else body
-        lines = ["POST /api/proposals HTTP/1.1"]
+        lines = [f"POST {path} HTTP/1.1"]
         if include_host:
             lines.append(f"Host: {host_header}")
         lines.append("Content-Type: application/json")
@@ -410,6 +492,17 @@ class UnconfiguredProviderServerTests(unittest.TestCase):
     def test_ui_loads_without_model(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/", timeout=5) as r:
             self.assertEqual(r.status, 200)
+
+    def test_readiness_works_without_model(self):
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/readiness",
+            data=json.dumps(valid_payload()).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5) as r:
+            self.assertEqual(r.status, 200)
+            self.assertTrue(json.loads(r.read())["ready"])
 
     def test_generate_returns_clear_provider_error(self):
         request = urllib.request.Request(
