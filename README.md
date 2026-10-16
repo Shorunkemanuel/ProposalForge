@@ -1,6 +1,6 @@
 # ProposalForge
 
-Milestone 3-A adds a deterministic, accessible proposal-readiness checklist on top of the Milestone 2 vertical slice. Milestone 2 (implementation) and Milestone 1 (investigation) are retained below.
+Milestone 3-A adds a deterministic, accessible proposal-readiness checklist, Milestone 3-B adds the review acknowledgement and copy gate, and Milestone 3-C makes that gate revision-aware. All of this builds on the Milestone 2 vertical slice. Milestone 2 (implementation) and Milestone 1 (investigation) are retained below.
 
 ## Milestone 3-A — readiness checklist
 
@@ -22,6 +22,49 @@ Copying prefers `navigator.clipboard.writeText`. The clipboard API is feature-de
 - Local and deterministic: no new endpoint, no provider call, and no proposal data leaves the page.
 - The acknowledgement and status changes are announced through the existing polite live region (`#status`); focus is not moved when status text changes.
 - Accessibility: native labelled controls, keyboard-operable; state conveyed in text rather than colour alone; checkbox and button meet the 24 × 24 CSS-pixel target size, keep visible focus indicators, and honour `prefers-reduced-motion`.
+
+## Milestone 3-C — revision-aware review and copy gate
+
+Milestone 3-B's acknowledgement is transient browser state; Milestone 3-C makes it apply only to the *current* generated draft and its *current* source inputs, so edited or stale content cannot be copied as though it had just been reviewed. This is a UX/integrity safeguard, not factual verification.
+
+- A generated result is **current only while its source-input snapshot still matches** the form values used for that generation. The snapshot is a signature over the client-brief fields (`app/static/review-state.mjs`).
+- Any source-input edit after a result exists **latches the result stale**: the review box is cleared, copying is disabled, and any manual-copy fallback is cleared. Reverting the input does not silently restore eligibility; a successful regeneration is required.
+- Editing any generated-draft textarea after acknowledgement **revokes the acknowledgement** and disables copying until the edited draft is reviewed again. Editing a draft before acknowledgement is a no-op (review is already unconfirmed).
+- A **successful regeneration** replaces the draft and pricing with the new server response, clears stale state, and requires a fresh acknowledgement. A **failed regeneration** leaves the previous result visibly stale and non-copyable rather than restoring eligibility.
+- An **older in-flight response** is ignored via a request id, and a response whose submitted snapshot no longer matches the current form is shown as stale rather than current.
+- The gate lives in `app/static/review-state.mjs` as pure, DOM-free state logic; `app/static/app.js` owns all rendering, the `fetch` lifecycle, and the clipboard. Pricing remains **server-authoritative**: JavaScript still never calculates or changes a price, and stale/review state never mutates pricing.
+- Accessibility: the stale state is conveyed in visible text and announced **once** through the existing polite `#status` region (not per keystroke); the disabled controls describe the stale reason; native keyboard operation and focus behaviour are unchanged.
+
+## Future roadmap
+
+ProposalForge currently focuses on a local-first proposal-generation workflow: structured client inputs, deterministic pricing, AI-assisted drafting, human review, and copy-out.
+
+Future versions may introduce a hosted SaaS experience after the core workflow has been validated with real users.
+
+Potential future capabilities include:
+
+- User accounts and secure proposal history
+- Saved proposal templates and business profiles
+- Usage limits and proposal quotas
+- Free and paid subscription tiers
+- Advanced proposal customization
+- Proposal analytics and follow-up tools
+- Team/agency workspaces
+- Additional AI/model providers
+- Export and integration features
+
+### Potential subscription model
+
+A future freemium model may include:
+
+- **Free** — limited monthly proposal generation with the core proposal workflow.
+- **Plus** — higher usage limits, saved history, templates, and additional customization.
+- **Pro/Premium** — advanced workflows, higher limits, analytics, branding, and other professional features.
+- **Team/Agency** — shared workspaces, collaboration, and team-level controls.
+
+These tiers are future product hypotheses, not current product commitments. Pricing, limits, and feature boundaries will be determined after testing ProposalForge with real users and learning which capabilities customers are willing to pay for.
+
+The immediate priority is validating the core proposal workflow, deploying a usable version, and finding early users before introducing accounts, billing, persistence, or subscription infrastructure.
 
 ## Milestone 2 — implementation
 
@@ -50,8 +93,8 @@ app/
   validation.py    input validation (fields, lengths, numerics, currency)
   readiness.py     deterministic readiness checklist (no AI)
   pricing.py       deterministic decimal-safe pricing
-  static/          index.html, styles.css, app.js
-tests/             123 automated tests (no live credentials required)
+  static/          index.html, styles.css, app.js, review-state.mjs
+tests/             123 Python tests + review-state.test.mjs (no live credentials required)
 scripts/live_smoke.py   opt-in live inference check
 ```
 
@@ -104,7 +147,10 @@ If the Codespace has no reachable provider, the UI still loads and returns a cle
 
 ```sh
 python3 -m unittest discover -v
+node --test tests/review-state.test.mjs
 ```
+
+The Python suite covers the server, pipeline, validation, pricing, and readiness logic. The Node test uses only Node's built-in `node:test`/`node:assert` (no `package.json`, no installed dependency) and covers the pure review/copy gate state transitions in `app/static/review-state.mjs`.
 
 ### Live-provider smoke test (opt-in)
 

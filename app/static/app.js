@@ -1,4 +1,13 @@
-"use strict";
+import {
+  STALE_NOTICE,
+  STALE_STATUS,
+  REVIEW_REVOKED_STATUS,
+  createState,
+  formSignature,
+  isCopyEnabled,
+  isStale,
+  nextState,
+} from "./review-state.mjs";
 
 const DRAFT_FIELDS = [
   ["introduction", "Introduction"],
@@ -39,8 +48,10 @@ const reviewAck = document.getElementById("review-ack");
 const copyBtn = document.getElementById("copy-btn");
 const copyFallback = document.getElementById("copy-fallback");
 const copyFallbackText = document.getElementById("copy-fallback-text");
+const staleNotices = document.querySelectorAll("[data-stale]");
 
 let lastPricing = null;
+let gate = createState();
 
 function showError(message) {
   errorBox.textContent = message;
@@ -72,10 +83,31 @@ function hideCopyFallback() {
   copyFallbackText.value = "";
 }
 
-function resetReviewControls() {
-  reviewAck.checked = false;
-  copyBtn.disabled = true;
-  hideCopyFallback();
+function setStaleNotice(stale) {
+  for (const el of staleNotices) {
+    el.hidden = !stale;
+    el.textContent = stale ? STALE_NOTICE : "";
+  }
+  pricingCard.classList.toggle("is-stale", stale);
+  draftCard.classList.toggle("is-stale", stale);
+  if (stale) {
+    setDescribedBy(reviewAck, "stale-notice", null);
+    setDescribedBy(copyBtn, "stale-notice", null);
+    setDescribedBy(pricingCard, "pricing-stale-notice", null);
+  } else {
+    setDescribedBy(reviewAck, null, "stale-notice");
+    setDescribedBy(copyBtn, null, "stale-notice");
+    setDescribedBy(pricingCard, null, "pricing-stale-notice");
+  }
+}
+
+function syncReviewUi() {
+  reviewAck.checked = gate.reviewed;
+  copyBtn.disabled = !isCopyEnabled(gate);
+  if (!isCopyEnabled(gate)) {
+    hideCopyFallback();
+  }
+  setStaleNotice(isStale(gate));
 }
 
 function assembleProposalText() {
@@ -118,6 +150,17 @@ function showCopyFallback(text, message) {
   announce(message);
 }
 
+// The clipboard attempt is asynchronous, so the result can go stale or lose
+// its review acknowledgement while the write is still pending. Stale content
+// must never be offered for manual copying afterwards.
+function showCopyFallbackIfEligible(text, message) {
+  if (isCopyEnabled(gate)) {
+    showCopyFallback(text, message);
+    return;
+  }
+  hideCopyFallback();
+}
+
 async function copyProposal() {
   if (copyBtn.disabled) return;
   const text = assembleProposalText();
@@ -129,7 +172,7 @@ async function copyProposal() {
       announce("Proposal copied to the clipboard.");
       return;
     } catch (err) {
-      showCopyFallback(
+      showCopyFallbackIfEligible(
         text,
         "Copying to the clipboard was blocked or unavailable. Use the manual copy box below to select and copy the proposal."
       );
@@ -137,7 +180,7 @@ async function copyProposal() {
     }
   }
 
-  showCopyFallback(
+  showCopyFallbackIfEligible(
     text,
     "Clipboard access is not available in this browser. Use the manual copy box below to select and copy the proposal."
   );
@@ -204,7 +247,6 @@ function renderPricing(pricing) {
 }
 
 function renderDraft(result) {
-  resetReviewControls();
   draftNotice.textContent = result.notice;
   draftFields.innerHTML = "";
   for (const [key, label] of DRAFT_FIELDS) {
@@ -346,13 +388,26 @@ function scheduleReadiness() {
   readinessTimer = window.setTimeout(refreshReadiness, 250);
 }
 
-form.addEventListener("input", scheduleReadiness);
+form.addEventListener("input", () => {
+  const staleBefore = isStale(gate);
+  gate = nextState(gate, { type: "inputsChanged" });
+  syncReviewUi();
+  if (!staleBefore && isStale(gate)) {
+    announce(STALE_STATUS);
+  }
+  scheduleReadiness();
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearError();
   clearFieldErrors();
 
   const data = collectFormData();
+  const submittedSig = formSignature(data);
+
+  gate = nextState(gate, { type: "generationStarted" });
+  const requestId = gate.requestId;
 
   submitBtn.disabled = true;
   submitBtn.textContent = "Generating…";
@@ -367,6 +422,11 @@ form.addEventListener("submit", async (event) => {
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
+      if (requestId !== gate.requestId) {
+        return;
+      }
+      gate = nextState(gate, { type: "generationFailed" });
+      syncReviewUi();
       if (body && body.error === "validation_error" && body.fields) {
         const messages = showFieldErrors(body.fields);
         showError("Please correct the highlighted fields:\n" + messages.join("\n"));
@@ -381,24 +441,59 @@ form.addEventListener("submit", async (event) => {
       return;
     }
 
+    if (requestId !== gate.requestId) {
+      return;
+    }
+
+    const currentSig = formSignature(collectFormData());
+    gate = nextState(gate, {
+      type: "generationSucceeded",
+      requestId,
+      submittedSig,
+      currentSig,
+    });
     renderPricing(body.pricing);
     renderDraft(body);
-    announce("Proposal draft generated. Review and edit it before use.");
+    syncReviewUi();
+    announce(
+      isStale(gate)
+        ? STALE_STATUS
+        : "Proposal draft generated. Review and edit it before use."
+    );
   } catch (err) {
+    if (requestId !== gate.requestId) {
+      return;
+    }
+    gate = nextState(gate, { type: "generationFailed" });
+    syncReviewUi();
     showError("Could not reach the ProposalForge server.");
     announce("Could not reach the ProposalForge server.");
   } finally {
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Generate draft";
+    if (requestId === gate.requestId) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Generate draft";
+    }
+  }
+});
+
+draftFields.addEventListener("input", () => {
+  const wasReviewed = gate.reviewed;
+  gate = nextState(gate, { type: "draftEdited" });
+  syncReviewUi();
+  if (wasReviewed) {
+    announce(REVIEW_REVOKED_STATUS);
   }
 });
 
 reviewAck.addEventListener("change", () => {
-  copyBtn.disabled = !reviewAck.checked;
-  if (reviewAck.checked) {
+  const attempted = reviewAck.checked;
+  gate = nextState(gate, { type: "reviewSet", checked: attempted });
+  syncReviewUi();
+  if (gate.reviewed) {
     announce("Review confirmed. You can now copy the proposal.");
+  } else if (attempted) {
+    announce(STALE_STATUS);
   } else {
-    hideCopyFallback();
     announce("Review confirmation removed. Copying is disabled until you confirm again.");
   }
 });

@@ -70,6 +70,7 @@
 
     <section class="card" id="pricing-card" hidden tabindex="-1" aria-label="Calculated pricing">
       <h2>Calculated pricing (authoritative)</h2>
+      <p id="pricing-stale-notice" class="stale-notice" data-stale hidden></p>
       <p class="hint">These figures are computed by ProposalForge, not by the AI.</p>
       <table id="pricing-table" aria-label="Pricing breakdown"></table>
     </section>
@@ -77,6 +78,7 @@
     <section class="card" id="draft-card" hidden tabindex="-1" aria-label="Proposal draft">
       <h2>Proposal draft</h2>
       <div class="notice" id="draft-notice"></div>
+      <p id="stale-notice" class="stale-notice" data-stale hidden></p>
       <p class="hint">Every field below is editable. Edit freely during review.</p>
       <div id="draft-fields"></div>
       <div id="missing-box" hidden>
@@ -107,6 +109,6 @@
     <p>Local tool. Does not send proposals, store client data, or create accounts.</p>
   </footer>
 
-  <script src="/static/app.js"></script>
+  <script type="module" src="/static/app.js"></script>
 </body>
 </html>
