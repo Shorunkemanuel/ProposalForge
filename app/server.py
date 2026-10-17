@@ -1,13 +1,19 @@
 """Standard-library HTTP server and JSON API for ProposalForge.
 
 Endpoints:
-    GET  /                  serve the browser application
-    GET  /static/<path>     serve static assets
-    POST /api/proposals     validate, price, generate, return a draft
+    GET  /                       serve the browser application
+    GET  /static/<path>          serve static assets
+    GET  /api/provider/status    passive provider configuration status
+    POST /api/proposals          validate, price, generate, return a draft
+    POST /api/readiness          deterministic readiness report
+    POST /api/provider/test      server-side provider connection test
+    POST /api/provider/models    server-side provider model discovery
+    POST /api/provider/config    runtime (in-memory) provider configuration
 
 The server binds to localhost by default and is not intended to be exposed
 publicly. Error responses never include stack traces, secrets, or raw
-provider payloads.
+provider payloads. Provider configuration is process-scoped: runtime
+updates are held in memory only and are never persisted.
 """
 
 import ipaddress
@@ -17,12 +23,29 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
 from .proposal import InvalidModelOutput, build_proposal
+from .provider_setup import (
+    ProviderSettings,
+    process_provider_config,
+    process_provider_models,
+    process_provider_status,
+    process_provider_test,
+)
 from .providers import ProviderError, ProviderTimeout, ProviderUnavailable, get_provider
 from .readiness import evaluate_readiness
 from .validation import ValidationError
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 MAX_BODY_BYTES = 100_000
+
+# POST endpoints that take a JSON body. Provider status is GET-only; the
+# provider test/models/config endpoints accept an empty JSON object.
+POST_PATHS = (
+    "/api/proposals",
+    "/api/readiness",
+    "/api/provider/test",
+    "/api/provider/models",
+    "/api/provider/config",
+)
 
 # Milestone 2 binds to loopback only. The Host header is checked against this
 # set so a DNS-rebinding page (whose Host stays attacker-controlled even after
@@ -135,6 +158,7 @@ class ProposalForgeHandler(BaseHTTPRequestHandler):
     server_version = "ProposalForge"
     sys_version = ""
     provider = None
+    settings = None
     static_dir = STATIC_DIR
     allowed_hosts = LOOPBACK_HOSTS
 
@@ -143,6 +167,17 @@ class ProposalForgeHandler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         return
+
+    def _current_provider(self):
+        """Return the provider for this request.
+
+        A fixed provider (used by tests) wins; otherwise the provider is
+        rebuilt from the current runtime settings so in-app configuration
+        changes take effect for subsequent requests.
+        """
+        if self.provider is not None:
+            return self.provider
+        return get_provider(self.settings.snapshot())
 
     def _send_security_headers(self):
         for name, value in SECURITY_HEADERS.items():
@@ -186,6 +221,18 @@ class ProposalForgeHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/api/provider/status":
+            if not self._host_allowed():
+                self._send_json(
+                    403, {"error": "forbidden", "message": "Request host is not allowed."}
+                )
+                return
+            if not self._same_origin():
+                self._send_json(403, {"error": "forbidden"})
+                return
+            status, response = process_provider_status(self.settings)
+            self._send_json(status, response)
+            return
         if path in ("/", "/index.html"):
             self._serve_static("index.html")
             return
@@ -219,7 +266,8 @@ class ProposalForgeHandler(BaseHTTPRequestHandler):
         The UI always posts same-origin, so a cross-origin Origin indicates a
         local-browser (CSRF/DNS-rebinding) request and is refused. Non-browser
         clients that omit Origin are allowed, and JSON content-type is still
-        required separately.
+        required separately. A GET that mutates nothing (provider status) still
+        requires same-origin so a hostile page cannot read configuration.
         """
         origin = self.headers.get("Origin")
         if origin is None:
@@ -234,7 +282,7 @@ class ProposalForgeHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/proposals", "/api/readiness"):
+        if path not in POST_PATHS:
             self._send_json(404, {"error": "not_found"})
             return
 
@@ -275,19 +323,42 @@ class ProposalForgeHandler(BaseHTTPRequestHandler):
 
         if path == "/api/readiness":
             status, response = process_readiness_request(payload)
+        elif path == "/api/provider/test":
+            status, response = process_provider_test(self.settings, payload)
+        elif path == "/api/provider/models":
+            status, response = process_provider_models(self.settings, payload)
+        elif path == "/api/provider/config":
+            status, response = process_provider_config(self.settings, payload)
         else:
-            status, response = process_request(payload, self.provider)
+            try:
+                provider = self._current_provider()
+            except ProviderUnavailable as exc:
+                status, response = 502, {
+                    "error": "provider_unavailable",
+                    "message": str(exc),
+                }
+            else:
+                status, response = process_request(payload, provider)
         self._send_json(status, response)
 
 
-def create_server(provider=None, host="127.0.0.1", port=8000, static_dir=None):
+def create_server(
+    provider=None, host="127.0.0.1", port=8000, static_dir=None, settings=None
+):
     allowed_hosts = resolve_allowed_hosts(host)
-    provider = provider or get_provider()
+    if settings is None:
+        settings = ProviderSettings.from_env()
+    if provider is None:
+        # Fail fast on an invalid environment configuration, then resolve the
+        # provider from the current settings on each request so runtime
+        # (in-app) changes take effect.
+        get_provider(settings.snapshot())
     handler = type(
         "BoundProposalForgeHandler",
         (ProposalForgeHandler,),
         {
             "provider": provider,
+            "settings": settings,
             "static_dir": static_dir or STATIC_DIR,
             "allowed_hosts": allowed_hosts,
         },

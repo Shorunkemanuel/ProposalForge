@@ -3,8 +3,8 @@
     python -m app [--host 127.0.0.1] [--port 8000]
 
 Binds to localhost by default so the development server is not exposed
-publicly. Set PROPOSALFORGE_MODEL (and optionally the other
-PROPOSALFORGE_* variables) before starting.
+publicly. The PROPOSALFORGE_* variables are optional: set them to seed the
+provider, or configure the provider in the app's "AI provider setup" card.
 """
 
 import argparse

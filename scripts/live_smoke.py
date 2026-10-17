@@ -1,9 +1,9 @@
 """Live provider smoke test (NOT part of the automated suite).
 
-This script performs a real inference call against the configured
-Ollama-compatible endpoint. Run it only when the endpoint and any
-authentication are verified and available. A mocked test result is not a
-substitute for this.
+This script performs a real inference call against the configured provider
+(the native Ollama API or an OpenAI-compatible endpoint). Run it only when the
+endpoint and any authentication are verified and available. A mocked test
+result is not a substitute for this.
 
     export PROPOSALFORGE_MODEL=<verified-model>
     python scripts/live_smoke.py
